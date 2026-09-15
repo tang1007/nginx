@@ -21,13 +21,19 @@
 typedef ngx_http_request_t   *nginx;
 
 typedef struct {
+    ngx_http_request_t       *request;
+
     ngx_str_t                 filename;
     ngx_str_t                 redirect_uri;
-    ngx_str_t                 redirect_args;
 
     SV                       *next;
 
-    ngx_uint_t                done;       /* unsigned  done:1; */
+    ngx_int_t                 status;
+
+    unsigned                  done:1;
+    unsigned                  error:1;
+    unsigned                  variable:1;
+    unsigned                  header_sent:1;
 
     ngx_array_t              *variables;  /* array of ngx_http_perl_var_t */
 
@@ -44,7 +50,16 @@ typedef struct {
 } ngx_http_perl_var_t;
 
 
+typedef struct {
+    ngx_http_request_t       *request;
+    SV                       *sv;
+} ngx_http_perl_cleanup_t;
+
+
 extern ngx_module_t  ngx_http_perl_module;
+
+
+extern ngx_http_perl_ctx_t  *ngx_http_perl_active_context;
 
 
 /*
@@ -62,6 +77,7 @@ extern void boot_DynaLoader(pTHX_ CV* cv);
 
 void ngx_http_perl_handle_request(ngx_http_request_t *r);
 void ngx_http_perl_sleep_handler(ngx_http_request_t *r);
+void ngx_http_perl_refcount_cleanup(void *data);
 
 
 #endif /* _NGX_HTTP_PERL_MODULE_H_INCLUDED_ */

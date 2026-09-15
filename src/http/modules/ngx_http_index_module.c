@@ -126,6 +126,7 @@ ngx_http_index_handler(ngx_http_request_t *r)
     name = NULL;
     /* suppress MSVC warning */
     path.data = NULL;
+    e.status = 0;
 
     index = ilcf->indices->elts;
     for (i = 0; i < ilcf->indices->nelts; i++) {
@@ -163,7 +164,7 @@ ngx_http_index_handler(ngx_http_request_t *r)
 
             name = ngx_http_map_uri_to_path(r, &path, &root, reserve);
             if (name == NULL) {
-                return NGX_ERROR;
+                return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
 
             allocated = path.data + path.len - name;
@@ -180,18 +181,28 @@ ngx_http_index_handler(ngx_http_request_t *r)
         } else {
             e.ip = index[i].values->elts;
             e.pos = name;
+            e.end = name + allocated;
 
             while (*(uintptr_t *) e.ip) {
                 code = *(ngx_http_script_code_pt *) e.ip;
                 code((ngx_http_script_engine_t *) &e);
             }
 
+            if (e.status) {
+                return NGX_HTTP_INTERNAL_SERVER_ERROR;
+            }
+
+            if (ngx_http_script_check_length(&e, 1) != NGX_OK) {
+                return NGX_ERROR;
+            }
+
             if (*name == '/') {
-                uri.len = len - 1;
+                uri.len = e.pos - name;
                 uri.data = name;
                 return ngx_http_internal_redirect(r, &uri, &r->args);
             }
 
+            len = e.pos - name + 1;
             path.len = e.pos - path.data;
 
             *e.pos = '\0';
@@ -217,12 +228,12 @@ ngx_http_index_handler(ngx_http_request_t *r)
         if (ngx_open_cached_file(clcf->open_file_cache, &path, &of, r->pool)
             != NGX_OK)
         {
-            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, of.err,
-                           "%s \"%s\" failed", of.failed, path.data);
-
             if (of.err == 0) {
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
+
+            ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, of.err,
+                           "%s \"%s\" failed", of.failed, path.data);
 
 #if (NGX_HAVE_OPENAT)
             if (of.err == NGX_EMLINK
@@ -490,7 +501,7 @@ ngx_http_index_set_index(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         if (value[i].len == 0) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "index \"%V\" in \"index\" directive is invalid",
-                               &value[1]);
+                               &value[i]);
             return NGX_CONF_ERROR;
         }
 

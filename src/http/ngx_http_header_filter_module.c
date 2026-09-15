@@ -13,6 +13,7 @@
 
 static ngx_int_t ngx_http_header_filter_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_header_filter(ngx_http_request_t *r);
+static ngx_int_t ngx_http_early_hints_filter(ngx_http_request_t *r);
 
 
 static ngx_http_module_t  ngx_http_header_filter_module_ctx = {
@@ -46,8 +47,12 @@ ngx_module_t  ngx_http_header_filter_module = {
 };
 
 
-static char ngx_http_server_string[] = "Server: nginx" CRLF;
-static char ngx_http_server_full_string[] = "Server: " NGINX_VER CRLF;
+static u_char ngx_http_server_string[] = "Server: nginx" CRLF;
+static u_char ngx_http_server_full_string[] = "Server: " NGINX_VER CRLF;
+static u_char ngx_http_server_build_string[] = "Server: " NGINX_VER_BUILD CRLF;
+
+static ngx_str_t ngx_http_early_hints_status_line =
+    ngx_string("HTTP/1.1 103 Early Hints" CRLF);
 
 
 static ngx_str_t ngx_http_status_lines[] = {
@@ -74,8 +79,9 @@ static ngx_str_t ngx_http_status_lines[] = {
     ngx_null_string,  /* "305 Use Proxy" */
     ngx_null_string,  /* "306 unused" */
     ngx_string("307 Temporary Redirect"),
+    ngx_string("308 Permanent Redirect"),
 
-#define NGX_HTTP_LAST_3XX  308
+#define NGX_HTTP_LAST_3XX  309
 #define NGX_HTTP_OFF_4XX   (NGX_HTTP_LAST_3XX - 301 + NGX_HTTP_OFF_3XX)
 
     ngx_string("400 Bad Request"),
@@ -85,7 +91,7 @@ static ngx_str_t ngx_http_status_lines[] = {
     ngx_string("404 Not Found"),
     ngx_string("405 Not Allowed"),
     ngx_string("406 Not Acceptable"),
-    ngx_null_string,  /* "407 Proxy Authentication Required" */
+    ngx_string("407 Proxy Authentication Required"),
     ngx_string("408 Request Time-out"),
     ngx_string("409 Conflict"),
     ngx_string("410 Gone"),
@@ -95,17 +101,21 @@ static ngx_str_t ngx_http_status_lines[] = {
     ngx_string("414 Request-URI Too Large"),
     ngx_string("415 Unsupported Media Type"),
     ngx_string("416 Requested Range Not Satisfiable"),
+    ngx_null_string,  /* "417 Expectation Failed" */
+    ngx_null_string,  /* "418 unused" */
+    ngx_null_string,  /* "419 unused" */
+    ngx_null_string,  /* "420 unused" */
+    ngx_string("421 Misdirected Request"),
+    ngx_null_string,  /* "422 Unprocessable Entity" */
+    ngx_null_string,  /* "423 Locked" */
+    ngx_null_string,  /* "424 Failed Dependency" */
+    ngx_null_string,  /* "425 unused" */
+    ngx_null_string,  /* "426 Upgrade Required" */
+    ngx_null_string,  /* "427 unused" */
+    ngx_null_string,  /* "428 Precondition Required" */
+    ngx_string("429 Too Many Requests"),
 
-    /* ngx_null_string, */  /* "417 Expectation Failed" */
-    /* ngx_null_string, */  /* "418 unused" */
-    /* ngx_null_string, */  /* "419 unused" */
-    /* ngx_null_string, */  /* "420 unused" */
-    /* ngx_null_string, */  /* "421 unused" */
-    /* ngx_null_string, */  /* "422 Unprocessable Entity" */
-    /* ngx_null_string, */  /* "423 Locked" */
-    /* ngx_null_string, */  /* "424 Failed Dependency" */
-
-#define NGX_HTTP_LAST_4XX  417
+#define NGX_HTTP_LAST_4XX  430
 #define NGX_HTTP_OFF_5XX   (NGX_HTTP_LAST_4XX - 400 + NGX_HTTP_OFF_4XX)
 
     ngx_string("500 Internal Server Error"),
@@ -113,10 +123,10 @@ static ngx_str_t ngx_http_status_lines[] = {
     ngx_string("502 Bad Gateway"),
     ngx_string("503 Service Temporarily Unavailable"),
     ngx_string("504 Gateway Time-out"),
-
-    ngx_null_string,        /* "505 HTTP Version Not Supported" */
+    ngx_string("505 HTTP Version Not Supported"),
     ngx_null_string,        /* "506 Variant Also Negotiates" */
     ngx_string("507 Insufficient Storage"),
+
     /* ngx_null_string, */  /* "508 unused" */
     /* ngx_null_string, */  /* "509 unused" */
     /* ngx_null_string, */  /* "510 Not Extended" */
@@ -161,10 +171,6 @@ ngx_http_header_filter(ngx_http_request_t *r)
     ngx_connection_t          *c;
     ngx_http_core_loc_conf_t  *clcf;
     ngx_http_core_srv_conf_t  *cscf;
-    struct sockaddr_in        *sin;
-#if (NGX_HAVE_INET6)
-    struct sockaddr_in6       *sin6;
-#endif
     u_char                     addr[NGX_SOCKADDR_STRLEN];
 
     if (r->header_sent) {
@@ -193,6 +199,10 @@ ngx_http_header_filter(ngx_http_request_t *r)
             r->headers_out.last_modified_time = -1;
             r->headers_out.last_modified = NULL;
         }
+    }
+
+    if (r->keepalive && (ngx_terminate || ngx_exiting)) {
+        r->keepalive = 0;
     }
 
     len = sizeof("HTTP/1.x ") - 1 + sizeof(CRLF) - 1
@@ -278,8 +288,15 @@ ngx_http_header_filter(ngx_http_request_t *r)
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
     if (r->headers_out.server == NULL) {
-        len += clcf->server_tokens ? sizeof(ngx_http_server_full_string) - 1:
-                                     sizeof(ngx_http_server_string) - 1;
+        if (clcf->server_tokens == NGX_HTTP_SERVER_TOKENS_ON) {
+            len += sizeof(ngx_http_server_full_string) - 1;
+
+        } else if (clcf->server_tokens == NGX_HTTP_SERVER_TOKENS_BUILD) {
+            len += sizeof(ngx_http_server_build_string) - 1;
+
+        } else {
+            len += sizeof(ngx_http_server_string) - 1;
+        }
     }
 
     if (r->headers_out.date == NULL) {
@@ -313,7 +330,8 @@ ngx_http_header_filter(ngx_http_request_t *r)
 
     if (r->headers_out.location
         && r->headers_out.location->value.len
-        && r->headers_out.location->value.data[0] == '/')
+        && r->headers_out.location->value.data[0] == '/'
+        && clcf->absolute_redirect)
     {
         r->headers_out.location->hash = 0;
 
@@ -333,24 +351,7 @@ ngx_http_header_filter(ngx_http_request_t *r)
             }
         }
 
-        switch (c->local_sockaddr->sa_family) {
-
-#if (NGX_HAVE_INET6)
-        case AF_INET6:
-            sin6 = (struct sockaddr_in6 *) c->local_sockaddr;
-            port = ntohs(sin6->sin6_port);
-            break;
-#endif
-#if (NGX_HAVE_UNIX_DOMAIN)
-        case AF_UNIX:
-            port = 0;
-            break;
-#endif
-        default: /* AF_INET */
-            sin = (struct sockaddr_in *) c->local_sockaddr;
-            port = ntohs(sin->sin_port);
-            break;
-        }
+        port = ngx_inet_get_port(c->local_sockaddr);
 
         len += sizeof("Location: https://") - 1
                + host.len
@@ -456,12 +457,16 @@ ngx_http_header_filter(ngx_http_request_t *r)
     *b->last++ = CR; *b->last++ = LF;
 
     if (r->headers_out.server == NULL) {
-        if (clcf->server_tokens) {
-            p = (u_char *) ngx_http_server_full_string;
+        if (clcf->server_tokens == NGX_HTTP_SERVER_TOKENS_ON) {
+            p = ngx_http_server_full_string;
             len = sizeof(ngx_http_server_full_string) - 1;
 
+        } else if (clcf->server_tokens == NGX_HTTP_SERVER_TOKENS_BUILD) {
+            p = ngx_http_server_build_string;
+            len = sizeof(ngx_http_server_build_string) - 1;
+
         } else {
-            p = (u_char *) ngx_http_server_string;
+            p = ngx_http_server_string;
             len = sizeof(ngx_http_server_string) - 1;
         }
 
@@ -625,9 +630,112 @@ ngx_http_header_filter(ngx_http_request_t *r)
 
 
 static ngx_int_t
+ngx_http_early_hints_filter(ngx_http_request_t *r)
+{
+    size_t            len;
+    ngx_buf_t        *b;
+    ngx_uint_t        i;
+    ngx_chain_t       out;
+    ngx_list_part_t  *part;
+    ngx_table_elt_t  *header;
+
+    if (r != r->main) {
+        return NGX_OK;
+    }
+
+    if (r->http_version < NGX_HTTP_VERSION_11) {
+        return NGX_OK;
+    }
+
+    len = 0;
+
+    part = &r->headers_out.headers.part;
+    header = part->elts;
+
+    for (i = 0; /* void */; i++) {
+
+        if (i >= part->nelts) {
+            if (part->next == NULL) {
+                break;
+            }
+
+            part = part->next;
+            header = part->elts;
+            i = 0;
+        }
+
+        if (header[i].hash == 0) {
+            continue;
+        }
+
+        len += header[i].key.len + sizeof(": ") - 1 + header[i].value.len
+               + sizeof(CRLF) - 1;
+    }
+
+    if (len == 0) {
+        return NGX_OK;
+    }
+
+    len += ngx_http_early_hints_status_line.len
+           /* the end of the early hints */
+           + sizeof(CRLF) - 1;
+
+    b = ngx_create_temp_buf(r->pool, len);
+    if (b == NULL) {
+        return NGX_ERROR;
+    }
+
+    b->last = ngx_copy(b->last, ngx_http_early_hints_status_line.data,
+                       ngx_http_early_hints_status_line.len);
+
+    part = &r->headers_out.headers.part;
+    header = part->elts;
+
+    for (i = 0; /* void */; i++) {
+
+        if (i >= part->nelts) {
+            if (part->next == NULL) {
+                break;
+            }
+
+            part = part->next;
+            header = part->elts;
+            i = 0;
+        }
+
+        if (header[i].hash == 0) {
+            continue;
+        }
+
+        b->last = ngx_copy(b->last, header[i].key.data, header[i].key.len);
+        *b->last++ = ':'; *b->last++ = ' ';
+
+        b->last = ngx_copy(b->last, header[i].value.data, header[i].value.len);
+        *b->last++ = CR; *b->last++ = LF;
+    }
+
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                   "%*s", (size_t) (b->last - b->pos), b->pos);
+
+    /* the end of HTTP early hints */
+    *b->last++ = CR; *b->last++ = LF;
+
+    r->header_size = b->last - b->pos;
+
+    b->flush = 1;
+
+    out.buf = b;
+    out.next = NULL;
+
+    return ngx_http_write_filter(r, &out);
+}
+
+
+static ngx_int_t
 ngx_http_header_filter_init(ngx_conf_t *cf)
 {
     ngx_http_top_header_filter = ngx_http_header_filter;
+    ngx_http_top_early_hints_filter = ngx_http_early_hints_filter;
 
     return NGX_OK;
 }

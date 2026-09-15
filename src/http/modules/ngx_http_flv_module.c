@@ -156,12 +156,6 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     }
 
     if (!of.is_file) {
-
-        if (ngx_close_file(of.fd) == NGX_FILE_ERROR) {
-            ngx_log_error(NGX_LOG_ALERT, log, ngx_errno,
-                          ngx_close_file_n " \"%s\" failed", path.data);
-        }
-
         return NGX_DECLINED;
     }
 
@@ -203,7 +197,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     }
 
     if (i == 0) {
-        b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+        b = ngx_calloc_buf(r->pool);
         if (b == NULL) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -217,7 +211,7 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     }
 
 
-    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+    b = ngx_calloc_buf(r->pool);
     if (b == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -238,9 +232,10 @@ ngx_http_flv_handler(ngx_http_request_t *r)
     b->file_pos = start;
     b->file_last = of.size;
 
-    b->in_file = b->file_last ? 1: 0;
+    b->in_file = b->file_last ? 1 : 0;
     b->last_buf = (r == r->main) ? 1 : 0;
     b->last_in_chain = 1;
+    b->sync = (b->last_buf || b->in_file) ? 0 : 1;
 
     b->file->fd = of.fd;
     b->file->name = path;

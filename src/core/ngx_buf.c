@@ -137,6 +137,7 @@ ngx_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain, ngx_chain_t *in)
     while (in) {
         cl = ngx_alloc_chain_link(pool);
         if (cl == NULL) {
+            *ll = NULL;
             return NGX_ERROR;
         }
 
@@ -186,28 +187,30 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 {
     ngx_chain_t  *cl;
 
-    if (*busy == NULL) {
-        *busy = *out;
+    if (*out) {
+        if (*busy == NULL) {
+            *busy = *out;
 
-    } else {
-        for (cl = *busy; cl->next; cl = cl->next) { /* void */ }
+        } else {
+            for (cl = *busy; cl->next; cl = cl->next) { /* void */ }
 
-        cl->next = *out;
+            cl->next = *out;
+        }
+
+        *out = NULL;
     }
-
-    *out = NULL;
 
     while (*busy) {
         cl = *busy;
-
-        if (ngx_buf_size(cl->buf) != 0) {
-            break;
-        }
 
         if (cl->buf->tag != tag) {
             *busy = cl->next;
             ngx_free_chain(p, cl);
             continue;
+        }
+
+        if (ngx_buf_size(cl->buf) != 0) {
+            break;
         }
 
         cl->buf->pos = cl->buf->start;
@@ -244,6 +247,9 @@ ngx_chain_coalesce_file(ngx_chain_t **in, off_t limit)
             if (aligned <= cl->buf->file_last) {
                 size = aligned - cl->buf->file_pos;
             }
+
+            total += size;
+            break;
         }
 
         total += size;

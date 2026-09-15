@@ -180,15 +180,7 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
         code(e);
     }
 
-    if (e->status < NGX_HTTP_BAD_REQUEST) {
-        return e->status;
-    }
-
-    if (r->err_status == 0) {
-        return e->status;
-    }
-
-    return r->err_status;
+    return e->status;
 }
 
 
@@ -325,6 +317,11 @@ ngx_http_rewrite(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_memzero(regex, sizeof(ngx_http_script_regex_code_t));
 
     value = cf->args->elts;
+
+    if (value[2].len == 0) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "empty replacement");
+        return NGX_CONF_ERROR;
+    }
 
     ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
 
@@ -492,6 +489,7 @@ ngx_http_rewrite_return(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         if (cf->args->nelts == 2) {
+            ngx_str_set(&ret->text.value, "");
             return NGX_CONF_OK;
         }
 
@@ -560,21 +558,21 @@ ngx_http_rewrite_if(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    for (i = 0; ngx_modules[i]; i++) {
-        if (ngx_modules[i]->type != NGX_HTTP_MODULE) {
+    for (i = 0; cf->cycle->modules[i]; i++) {
+        if (cf->cycle->modules[i]->type != NGX_HTTP_MODULE) {
             continue;
         }
 
-        module = ngx_modules[i]->ctx;
+        module = cf->cycle->modules[i]->ctx;
 
         if (module->create_loc_conf) {
 
             mconf = module->create_loc_conf(cf);
             if (mconf == NULL) {
-                 return NGX_CONF_ERROR;
+                return NGX_CONF_ERROR;
             }
 
-            ctx->loc_conf[ngx_modules[i]->ctx_index] = mconf;
+            ctx->loc_conf[cf->cycle->modules[i]->ctx_index] = mconf;
         }
     }
 
@@ -917,7 +915,8 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value[1].len--;
     value[1].data++;
 
-    v = ngx_http_add_variable(cf, &value[1], NGX_HTTP_VAR_CHANGEABLE);
+    v = ngx_http_add_variable(cf, &value[1],
+                              NGX_HTTP_VAR_CHANGEABLE|NGX_HTTP_VAR_WEAK);
     if (v == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -927,15 +926,7 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    if (v->get_handler == NULL
-        && ngx_strncasecmp(value[1].data, (u_char *) "http_", 5) != 0
-        && ngx_strncasecmp(value[1].data, (u_char *) "sent_http_", 10) != 0
-        && ngx_strncasecmp(value[1].data, (u_char *) "upstream_http_", 14) != 0
-        && ngx_strncasecmp(value[1].data, (u_char *) "cookie_", 7) != 0
-        && ngx_strncasecmp(value[1].data, (u_char *) "upstream_cookie_", 16)
-           != 0
-        && ngx_strncasecmp(value[1].data, (u_char *) "arg_", 4) != 0)
-    {
+    if (v->get_handler == NULL) {
         v->get_handler = ngx_http_rewrite_var;
         v->data = index;
     }
@@ -975,10 +966,11 @@ static char *
 ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_str_t *value)
 {
-    ngx_int_t                              n;
-    ngx_http_script_compile_t              sc;
-    ngx_http_script_value_code_t          *val;
-    ngx_http_script_complex_value_code_t  *complex;
+    ngx_int_t                                  n;
+    ngx_http_script_compile_t                  sc;
+    ngx_http_script_value_code_t              *val;
+    ngx_http_script_complex_value_code_t      *complex;
+    ngx_http_script_complex_value_end_code_t  *complex_end;
 
     n = ngx_http_script_variables_count(value);
 
@@ -1024,6 +1016,15 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     if (ngx_http_script_compile(&sc) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
+
+    complex_end = ngx_http_script_add_code(lcf->codes,
+                              sizeof(ngx_http_script_complex_value_end_code_t),
+                              &complex);
+    if (complex_end == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    complex_end->code = ngx_http_script_complex_value_end_code;
 
     return NGX_CONF_OK;
 }

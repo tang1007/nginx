@@ -25,6 +25,7 @@ typedef int               ngx_err_t;
 #define NGX_EACCES        EACCES
 #define NGX_EBUSY         EBUSY
 #define NGX_EEXIST        EEXIST
+#define NGX_EEXIST_FILE   EEXIST
 #define NGX_EXDEV         EXDEV
 #define NGX_ENOTDIR       ENOTDIR
 #define NGX_EISDIR        EISDIR
@@ -53,6 +54,7 @@ typedef int               ngx_err_t;
 #define NGX_ENOMOREFILES  0
 #define NGX_ELOOP         ELOOP
 #define NGX_EBADF         EBADF
+#define NGX_EMSGSIZE      EMSGSIZE
 
 #if (NGX_HAVE_OPENAT)
 #define NGX_EMLINK        EMLINK

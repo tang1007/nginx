@@ -123,6 +123,8 @@ ngx_http_addition_header_filter(ngx_http_request_t *r)
     ngx_http_clear_accept_ranges(r);
     ngx_http_weak_etag(r);
 
+    r->preserve_body = 1;
+
     return ngx_http_next_header_filter(r);
 }
 
@@ -171,6 +173,7 @@ ngx_http_addition_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
     for (cl = in; cl; cl = cl->next) {
         if (cl->buf->last_buf) {
             cl->buf->last_buf = 0;
+            cl->buf->last_in_chain = 1;
             cl->buf->sync = 1;
             last = 1;
         }
@@ -242,7 +245,7 @@ ngx_http_addition_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     if (ngx_http_merge_types(cf, &conf->types_keys, &conf->types,
                              &prev->types_keys, &prev->types,
                              ngx_http_html_default_types)
-        != NGX_OK)
+        != NGX_CONF_OK)
     {
         return NGX_CONF_ERROR;
     }

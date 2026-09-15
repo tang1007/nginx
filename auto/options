@@ -7,6 +7,7 @@ help=no
 
 NGX_PREFIX=
 NGX_SBIN_PATH=
+NGX_MODULES_PATH=
 NGX_CONF_PREFIX=
 NGX_CONF_PATH=
 NGX_ERROR_LOG_PATH=
@@ -40,10 +41,13 @@ EVENT_FOUND=NO
 EVENT_SELECT=NO
 EVENT_POLL=NO
 
+CONTROL_API=NO
+
 USE_THREADS=NO
 
 NGX_FILE_AIO=NO
-NGX_IPV6=NO
+
+QUIC_BPF=NO
 
 HTTP=YES
 
@@ -59,8 +63,8 @@ HTTP_CHARSET=YES
 HTTP_GZIP=YES
 HTTP_SSL=NO
 HTTP_V2=NO
+HTTP_V3=NO
 HTTP_SSI=YES
-HTTP_POSTPONE=NO
 HTTP_REALIP=NO
 HTTP_XSLT=NO
 HTTP_IMAGE_FILTER=NO
@@ -70,8 +74,10 @@ HTTP_DAV=NO
 HTTP_ACCESS=YES
 HTTP_AUTH_BASIC=YES
 HTTP_AUTH_REQUEST=NO
+HTTP_MIRROR=YES
 HTTP_USERID=YES
 HTTP_SLICE=NO
+HTTP_JSON=NO
 HTTP_AUTOINDEX=YES
 HTTP_RANDOM_INDEX=NO
 HTTP_STATUS=NO
@@ -85,6 +91,8 @@ HTTP_PROXY=YES
 HTTP_FASTCGI=YES
 HTTP_UWSGI=YES
 HTTP_SCGI=YES
+HTTP_GRPC=YES
+HTTP_TUNNEL=YES
 HTTP_PERL=NO
 HTTP_MEMCACHED=YES
 HTTP_LIMIT_CONN=YES
@@ -100,8 +108,11 @@ HTTP_GZIP_STATIC=NO
 HTTP_UPSTREAM_HASH=YES
 HTTP_UPSTREAM_IP_HASH=YES
 HTTP_UPSTREAM_LEAST_CONN=YES
+HTTP_UPSTREAM_LEAST_TIME=YES
+HTTP_UPSTREAM_RANDOM=YES
 HTTP_UPSTREAM_KEEPALIVE=YES
 HTTP_UPSTREAM_ZONE=YES
+HTTP_UPSTREAM_STICKY=YES
 
 # STUB
 HTTP_STUB_STATUS=NO
@@ -114,32 +125,43 @@ MAIL_SMTP=YES
 
 STREAM=NO
 STREAM_SSL=NO
+STREAM_REALIP=NO
 STREAM_LIMIT_CONN=YES
 STREAM_ACCESS=YES
+STREAM_GEO=YES
+STREAM_GEOIP=NO
+STREAM_MAP=YES
+STREAM_SPLIT_CLIENTS=YES
+STREAM_RETURN=YES
+STREAM_PASS=YES
+STREAM_SET=YES
 STREAM_UPSTREAM_HASH=YES
 STREAM_UPSTREAM_LEAST_CONN=YES
+STREAM_UPSTREAM_LEAST_TIME=YES
+STREAM_UPSTREAM_RANDOM=YES
 STREAM_UPSTREAM_ZONE=YES
+STREAM_SSL_PREREAD=NO
+
+DYNAMIC_MODULES=
+DYNAMIC_MODULES_SRCS=
 
 NGX_ADDONS=
+NGX_ADDON_SRCS=
+NGX_ADDON_DEPS=
+DYNAMIC_ADDONS=
+
+NGX_COMPAT=NO
 
 USE_PCRE=NO
 PCRE=NONE
 PCRE_OPT=
 PCRE_CONF_OPT=
 PCRE_JIT=NO
+PCRE2=YES
 
 USE_OPENSSL=NO
+USE_OPENSSL_QUIC=NO
 OPENSSL=NONE
-
-USE_MD5=NO
-MD5=NONE
-MD5_OPT=
-MD5_ASM=NO
-
-USE_SHA1=NO
-SHA1=NONE
-SHA1_OPT=
-SHA1_ASM=NO
 
 USE_ZLIB=NO
 ZLIB=NONE
@@ -151,9 +173,12 @@ NGX_PERL=perl
 
 USE_LIBXSLT=NO
 USE_LIBGD=NO
+USE_GEOIP=NO
 
 NGX_GOOGLE_PERFTOOLS=NO
 NGX_CPP_TEST=NO
+
+SO_COOKIE_FOUND=NO
 
 NGX_LIBATOMIC=NO
 
@@ -178,6 +203,7 @@ do
         --prefix=)                       NGX_PREFIX="!"             ;;
         --prefix=*)                      NGX_PREFIX="$value"        ;;
         --sbin-path=*)                   NGX_SBIN_PATH="$value"     ;;
+        --modules-path=*)                NGX_MODULES_PATH="$value"  ;;
         --conf-path=*)                   NGX_CONF_PATH="$value"     ;;
         --error-log-path=*)              NGX_ERROR_LOG_PATH="$value";;
         --pid-path=*)                    NGX_PID_PATH="$value"      ;;
@@ -198,7 +224,15 @@ do
         --with-threads)                  USE_THREADS=YES            ;;
 
         --with-file-aio)                 NGX_FILE_AIO=YES           ;;
-        --with-ipv6)                     NGX_IPV6=YES               ;;
+
+        --without-quic_bpf_module)       QUIC_BPF=NONE              ;;
+
+        --with-control-api)              CONTROL_API=YES            ;;
+
+        --with-ipv6)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-ipv6\" option is deprecated"
+        ;;
 
         --without-http)                  HTTP=NO                    ;;
         --without-http-cache)            HTTP_CACHE=NO              ;;
@@ -212,11 +246,17 @@ do
 
         --with-http_ssl_module)          HTTP_SSL=YES               ;;
         --with-http_v2_module)           HTTP_V2=YES                ;;
+        --with-http_v3_module)           HTTP_V3=YES                ;;
         --with-http_realip_module)       HTTP_REALIP=YES            ;;
         --with-http_addition_module)     HTTP_ADDITION=YES          ;;
         --with-http_xslt_module)         HTTP_XSLT=YES              ;;
+        --with-http_xslt_module=dynamic) HTTP_XSLT=DYNAMIC          ;;
         --with-http_image_filter_module) HTTP_IMAGE_FILTER=YES      ;;
+        --with-http_image_filter_module=dynamic)
+                                         HTTP_IMAGE_FILTER=DYNAMIC  ;;
         --with-http_geoip_module)        HTTP_GEOIP=YES             ;;
+        --with-http_geoip_module=dynamic)
+                                         HTTP_GEOIP=DYNAMIC         ;;
         --with-http_sub_module)          HTTP_SUB=YES               ;;
         --with-http_dav_module)          HTTP_DAV=YES               ;;
         --with-http_flv_module)          HTTP_FLV=YES               ;;
@@ -228,6 +268,7 @@ do
         --with-http_secure_link_module)  HTTP_SECURE_LINK=YES       ;;
         --with-http_degradation_module)  HTTP_DEGRADATION=YES       ;;
         --with-http_slice_module)        HTTP_SLICE=YES             ;;
+        --with-http_json_module)         HTTP_JSON=YES              ;;
 
         --without-http_charset_module)   HTTP_CHARSET=NO            ;;
         --without-http_gzip_module)      HTTP_GZIP=NO               ;;
@@ -235,6 +276,7 @@ do
         --without-http_userid_module)    HTTP_USERID=NO             ;;
         --without-http_access_module)    HTTP_ACCESS=NO             ;;
         --without-http_auth_basic_module) HTTP_AUTH_BASIC=NO        ;;
+        --without-http_mirror_module)    HTTP_MIRROR=NO             ;;
         --without-http_autoindex_module) HTTP_AUTOINDEX=NO          ;;
         --without-http_status_module)    HTTP_STATUS=NO             ;;
         --without-http_geo_module)       HTTP_GEO=NO                ;;
@@ -246,6 +288,8 @@ do
         --without-http_fastcgi_module)   HTTP_FASTCGI=NO            ;;
         --without-http_uwsgi_module)     HTTP_UWSGI=NO              ;;
         --without-http_scgi_module)      HTTP_SCGI=NO               ;;
+        --without-http_grpc_module)      HTTP_GRPC=NO               ;;
+        --without-http_tunnel_module)    HTTP_TUNNEL=NO             ;;
         --without-http_memcached_module) HTTP_MEMCACHED=NO          ;;
         --without-http_limit_conn_module) HTTP_LIMIT_CONN=NO        ;;
         --without-http_limit_req_module) HTTP_LIMIT_REQ=NO         ;;
@@ -255,10 +299,22 @@ do
         --without-http_upstream_ip_hash_module) HTTP_UPSTREAM_IP_HASH=NO ;;
         --without-http_upstream_least_conn_module)
                                          HTTP_UPSTREAM_LEAST_CONN=NO ;;
+        --without-http_upstream_least_time_module)
+                                         HTTP_UPSTREAM_LEAST_TIME=NO ;;
+        --without-http_upstream_random_module)
+                                         HTTP_UPSTREAM_RANDOM=NO    ;;
         --without-http_upstream_keepalive_module) HTTP_UPSTREAM_KEEPALIVE=NO ;;
         --without-http_upstream_zone_module) HTTP_UPSTREAM_ZONE=NO  ;;
+        --without-http_upstream_sticky_module) HTTP_UPSTREAM_STICKY=NO ;;
+        --without-http_upstream_sticky)
+            HTTP_UPSTREAM_STICKY=NO
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--without-http_upstream_sticky\" option is deprecated, \
+use the \"--without-http_upstream_sticky_module\" option instead"
+        ;;
 
         --with-http_perl_module)         HTTP_PERL=YES              ;;
+        --with-http_perl_module=dynamic) HTTP_PERL=DYNAMIC          ;;
         --with-perl_modules_path=*)      NGX_PERL_MODULES="$value"  ;;
         --with-perl=*)                   NGX_PERL="$value"          ;;
 
@@ -266,6 +322,7 @@ do
         --with-http_stub_status_module)  HTTP_STUB_STATUS=YES       ;;
 
         --with-mail)                     MAIL=YES                   ;;
+        --with-mail=dynamic)             MAIL=DYNAMIC               ;;
         --with-mail_ssl_module)          MAIL_SSL=YES               ;;
         # STUB
         --with-imap)
@@ -285,14 +342,32 @@ use the \"--with-mail_ssl_module\" option instead"
         --without-mail_smtp_module)      MAIL_SMTP=NO               ;;
 
         --with-stream)                   STREAM=YES                 ;;
+        --with-stream=dynamic)           STREAM=DYNAMIC             ;;
         --with-stream_ssl_module)        STREAM_SSL=YES             ;;
+        --with-stream_realip_module)     STREAM_REALIP=YES          ;;
+        --with-stream_geoip_module)      STREAM_GEOIP=YES           ;;
+        --with-stream_geoip_module=dynamic)
+                                         STREAM_GEOIP=DYNAMIC       ;;
+        --with-stream_ssl_preread_module)
+                                         STREAM_SSL_PREREAD=YES     ;;
         --without-stream_limit_conn_module)
                                          STREAM_LIMIT_CONN=NO       ;;
         --without-stream_access_module)  STREAM_ACCESS=NO           ;;
+        --without-stream_geo_module)     STREAM_GEO=NO              ;;
+        --without-stream_map_module)     STREAM_MAP=NO              ;;
+        --without-stream_split_clients_module)
+                                         STREAM_SPLIT_CLIENTS=NO    ;;
+        --without-stream_return_module)  STREAM_RETURN=NO           ;;
+        --without-stream_pass_module)    STREAM_PASS=NO             ;;
+        --without-stream_set_module)     STREAM_SET=NO              ;;
         --without-stream_upstream_hash_module)
                                          STREAM_UPSTREAM_HASH=NO    ;;
         --without-stream_upstream_least_conn_module)
                                          STREAM_UPSTREAM_LEAST_CONN=NO ;;
+        --without-stream_upstream_least_time_module)
+                                         STREAM_UPSTREAM_LEAST_TIME=NO ;;
+        --without-stream_upstream_random_module)
+                                         STREAM_UPSTREAM_RANDOM=NO  ;;
         --without-stream_upstream_zone_module)
                                          STREAM_UPSTREAM_ZONE=NO    ;;
 
@@ -300,6 +375,9 @@ use the \"--with-mail_ssl_module\" option instead"
         --with-cpp_test_module)          NGX_CPP_TEST=YES           ;;
 
         --add-module=*)                  NGX_ADDONS="$NGX_ADDONS $value" ;;
+        --add-dynamic-module=*)          DYNAMIC_ADDONS="$DYNAMIC_ADDONS $value" ;;
+
+        --with-compat)                   NGX_COMPAT=YES             ;;
 
         --with-cc=*)                     CC="$value"                ;;
         --with-cpp=*)                    CPP="$value"               ;;
@@ -313,17 +391,36 @@ use the \"--with-mail_ssl_module\" option instead"
         --with-pcre=*)                   PCRE="$value"              ;;
         --with-pcre-opt=*)               PCRE_OPT="$value"          ;;
         --with-pcre-jit)                 PCRE_JIT=YES               ;;
+        --without-pcre2)                 PCRE2=DISABLED             ;;
 
         --with-openssl=*)                OPENSSL="$value"           ;;
         --with-openssl-opt=*)            OPENSSL_OPT="$value"       ;;
 
-        --with-md5=*)                    MD5="$value"               ;;
-        --with-md5-opt=*)                MD5_OPT="$value"           ;;
-        --with-md5-asm)                  MD5_ASM=YES                ;;
+        --with-md5=*)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-md5\" option is deprecated"
+        ;;
+        --with-md5-opt=*)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-md5-opt\" option is deprecated"
+        ;;
+        --with-md5-asm)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-md5-asm\" option is deprecated"
+        ;;
 
-        --with-sha1=*)                   SHA1="$value"              ;;
-        --with-sha1-opt=*)               SHA1_OPT="$value"          ;;
-        --with-sha1-asm)                 SHA1_ASM=YES               ;;
+        --with-sha1=*)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-sha1\" option is deprecated"
+        ;;
+        --with-sha1-opt=*)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-sha1-opt\" option is deprecated"
+        ;;
+        --with-sha1-asm)
+            NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
+$0: warning: the \"--with-sha1-asm\" option is deprecated"
+        ;;
 
         --with-zlib=*)                   ZLIB="$value"              ;;
         --with-zlib-opt=*)               ZLIB_OPT="$value"          ;;
@@ -356,6 +453,7 @@ cat << END
 
   --prefix=PATH                      set installation prefix
   --sbin-path=PATH                   set nginx binary pathname
+  --modules-path=PATH                set modules path
   --conf-path=PATH                   set nginx.conf pathname
   --error-log-path=PATH              set error log pathname
   --pid-path=PATH                    set nginx.pid pathname
@@ -374,18 +472,26 @@ cat << END
   --with-poll_module                 enable poll module
   --without-poll_module              disable poll module
 
+  --with-control-api                 enable control API
+
   --with-threads                     enable thread pool support
 
   --with-file-aio                    enable file AIO support
-  --with-ipv6                        enable IPv6 support
+
+  --without-quic_bpf_module          disable ngx_quic_bpf_module
 
   --with-http_ssl_module             enable ngx_http_ssl_module
   --with-http_v2_module              enable ngx_http_v2_module
+  --with-http_v3_module              enable ngx_http_v3_module
   --with-http_realip_module          enable ngx_http_realip_module
   --with-http_addition_module        enable ngx_http_addition_module
   --with-http_xslt_module            enable ngx_http_xslt_module
+  --with-http_xslt_module=dynamic    enable dynamic ngx_http_xslt_module
   --with-http_image_filter_module    enable ngx_http_image_filter_module
+  --with-http_image_filter_module=dynamic
+                                     enable dynamic ngx_http_image_filter_module
   --with-http_geoip_module           enable ngx_http_geoip_module
+  --with-http_geoip_module=dynamic   enable dynamic ngx_http_geoip_module
   --with-http_sub_module             enable ngx_http_sub_module
   --with-http_dav_module             enable ngx_http_dav_module
   --with-http_flv_module             enable ngx_http_flv_module
@@ -397,6 +503,7 @@ cat << END
   --with-http_secure_link_module     enable ngx_http_secure_link_module
   --with-http_degradation_module     enable ngx_http_degradation_module
   --with-http_slice_module           enable ngx_http_slice_module
+  --with-http_json_module            enable ngx_http_json_module
   --with-http_stub_status_module     enable ngx_http_stub_status_module
 
   --without-http_charset_module      disable ngx_http_charset_module
@@ -405,6 +512,7 @@ cat << END
   --without-http_userid_module       disable ngx_http_userid_module
   --without-http_access_module       disable ngx_http_access_module
   --without-http_auth_basic_module   disable ngx_http_auth_basic_module
+  --without-http_mirror_module       disable ngx_http_mirror_module
   --without-http_autoindex_module    disable ngx_http_autoindex_module
   --without-http_geo_module          disable ngx_http_geo_module
   --without-http_map_module          disable ngx_http_map_module
@@ -415,6 +523,8 @@ cat << END
   --without-http_fastcgi_module      disable ngx_http_fastcgi_module
   --without-http_uwsgi_module        disable ngx_http_uwsgi_module
   --without-http_scgi_module         disable ngx_http_scgi_module
+  --without-http_grpc_module         disable ngx_http_grpc_module
+  --without-http_tunnel_module       disable ngx_http_tunnel_module
   --without-http_memcached_module    disable ngx_http_memcached_module
   --without-http_limit_conn_module   disable ngx_http_limit_conn_module
   --without-http_limit_req_module    disable ngx_http_limit_req_module
@@ -426,12 +536,19 @@ cat << END
                                      disable ngx_http_upstream_ip_hash_module
   --without-http_upstream_least_conn_module
                                      disable ngx_http_upstream_least_conn_module
+  --without-http_upstream_least_time_module
+                                     disable ngx_http_upstream_least_time_module
+  --without-http_upstream_random_module
+                                     disable ngx_http_upstream_random_module
   --without-http_upstream_keepalive_module
                                      disable ngx_http_upstream_keepalive_module
   --without-http_upstream_zone_module
                                      disable ngx_http_upstream_zone_module
+  --without-http_upstream_sticky_module
+                                     disable ngx_http_upstream_sticky_module
 
   --with-http_perl_module            enable ngx_http_perl_module
+  --with-http_perl_module=dynamic    enable dynamic ngx_http_perl_module
   --with-perl_modules_path=PATH      set Perl modules path
   --with-perl=PATH                   set perl binary pathname
 
@@ -451,26 +568,46 @@ cat << END
   --without-http-cache               disable HTTP cache
 
   --with-mail                        enable POP3/IMAP4/SMTP proxy module
+  --with-mail=dynamic                enable dynamic POP3/IMAP4/SMTP proxy module
   --with-mail_ssl_module             enable ngx_mail_ssl_module
   --without-mail_pop3_module         disable ngx_mail_pop3_module
   --without-mail_imap_module         disable ngx_mail_imap_module
   --without-mail_smtp_module         disable ngx_mail_smtp_module
 
-  --with-stream                      enable TCP proxy module
+  --with-stream                      enable TCP/UDP proxy module
+  --with-stream=dynamic              enable dynamic TCP/UDP proxy module
   --with-stream_ssl_module           enable ngx_stream_ssl_module
+  --with-stream_realip_module        enable ngx_stream_realip_module
+  --with-stream_geoip_module         enable ngx_stream_geoip_module
+  --with-stream_geoip_module=dynamic enable dynamic ngx_stream_geoip_module
+  --with-stream_ssl_preread_module   enable ngx_stream_ssl_preread_module
   --without-stream_limit_conn_module disable ngx_stream_limit_conn_module
   --without-stream_access_module     disable ngx_stream_access_module
+  --without-stream_geo_module        disable ngx_stream_geo_module
+  --without-stream_map_module        disable ngx_stream_map_module
+  --without-stream_split_clients_module
+                                     disable ngx_stream_split_clients_module
+  --without-stream_return_module     disable ngx_stream_return_module
+  --without-stream_pass_module       disable ngx_stream_pass_module
+  --without-stream_set_module        disable ngx_stream_set_module
   --without-stream_upstream_hash_module
                                      disable ngx_stream_upstream_hash_module
   --without-stream_upstream_least_conn_module
                                      disable ngx_stream_upstream_least_conn_module
+  --without-stream_upstream_least_time_module
+                                     disable ngx_stream_upstream_least_time_module
+  --without-stream_upstream_random_module
+                                     disable ngx_stream_upstream_random_module
   --without-stream_upstream_zone_module
                                      disable ngx_stream_upstream_zone_module
 
   --with-google_perftools_module     enable ngx_google_perftools_module
   --with-cpp_test_module             enable ngx_cpp_test_module
 
-  --add-module=PATH                  enable an external module
+  --add-module=PATH                  enable external module
+  --add-dynamic-module=PATH          enable dynamic external module
+
+  --with-compat                      dynamic modules compatibility
 
   --with-cc=PATH                     set C compiler pathname
   --with-cpp=PATH                    set C preprocessor pathname
@@ -485,14 +622,7 @@ cat << END
   --with-pcre=DIR                    set path to PCRE library sources
   --with-pcre-opt=OPTIONS            set additional build options for PCRE
   --with-pcre-jit                    build PCRE with JIT compilation support
-
-  --with-md5=DIR                     set path to md5 library sources
-  --with-md5-opt=OPTIONS             set additional build options for md5
-  --with-md5-asm                     use md5 assembler sources
-
-  --with-sha1=DIR                    set path to sha1 library sources
-  --with-sha1-opt=OPTIONS            set additional build options for sha1
-  --with-sha1-asm                    use sha1 assembler sources
+  --without-pcre2                    do not use PCRE2 library
 
   --with-zlib=DIR                    set path to zlib library sources
   --with-zlib-opt=OPTIONS            set additional build options for zlib
@@ -514,25 +644,13 @@ END
 fi
 
 
-if [ $HTTP = NO ]; then
-    HTTP_CHARSET=NO
-    HTTP_GZIP=NO
-    HTTP_SSI=NO
-    HTTP_USERID=NO
-    HTTP_ACCESS=NO
-    HTTP_STATUS=NO
-    HTTP_REWRITE=NO
-    HTTP_PROXY=NO
-    HTTP_FASTCGI=NO
-fi
-
-
 if [ ".$NGX_PLATFORM" = ".win32" ]; then
     NGX_WINE=$WINE
 fi
 
 
 NGX_SBIN_PATH=${NGX_SBIN_PATH:-sbin/nginx}
+NGX_MODULES_PATH=${NGX_MODULES_PATH:-modules}
 NGX_CONF_PATH=${NGX_CONF_PATH:-conf/nginx.conf}
 NGX_CONF_PREFIX=`dirname $NGX_CONF_PATH`
 NGX_PID_PATH=${NGX_PID_PATH:-logs/nginx.pid}

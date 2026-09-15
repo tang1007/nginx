@@ -94,7 +94,7 @@ typedef intptr_t        ngx_flag_t;
 
 
 #ifndef NGX_ALIGNMENT
-#define NGX_ALIGNMENT   sizeof(unsigned long)    /* platform word */
+#define NGX_ALIGNMENT   sizeof(uintptr_t)    /* platform word */
 #endif
 
 #define ngx_align(d, a)     (((d) + (a - 1)) & ~(a - 1))
@@ -125,13 +125,21 @@ typedef intptr_t        ngx_flag_t;
 #endif
 
 
-#if ((__GNU__ == 2) && (__GNUC_MINOR__ < 8))
-#define NGX_MAX_UINT32_VALUE  (uint32_t) 0xffffffffLL
-#else
 #define NGX_MAX_UINT32_VALUE  (uint32_t) 0xffffffff
-#endif
-
 #define NGX_MAX_INT32_VALUE   (uint32_t) 0x7fffffff
+
+
+#if (NGX_COMPAT)
+
+#define NGX_COMPAT_BEGIN(slots)  uint64_t spare[slots];
+#define NGX_COMPAT_END
+
+#else
+
+#define NGX_COMPAT_BEGIN(slots)
+#define NGX_COMPAT_END
+
+#endif
 
 
 #endif /* _NGX_CONFIG_H_INCLUDED_ */

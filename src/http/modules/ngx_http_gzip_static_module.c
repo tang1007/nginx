@@ -48,7 +48,7 @@ static ngx_command_t  ngx_http_gzip_static_commands[] = {
 };
 
 
-ngx_http_module_t  ngx_http_gzip_static_module_ctx = {
+static ngx_http_module_t  ngx_http_gzip_static_module_ctx = {
     NULL,                                  /* preconfiguration */
     ngx_http_gzip_static_init,             /* postconfiguration */
 
@@ -238,17 +238,20 @@ ngx_http_gzip_static_handler(ngx_http_request_t *r)
 
     h = ngx_list_push(&r->headers_out.headers);
     if (h == NULL) {
-        return NGX_ERROR;
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
     h->hash = 1;
+    h->next = NULL;
     ngx_str_set(&h->key, "Content-Encoding");
     ngx_str_set(&h->value, "gzip");
     r->headers_out.content_encoding = h;
 
+    r->allow_ranges = 1;
+
     /* we need to allocate all before the header would be sent */
 
-    b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
+    b = ngx_calloc_buf(r->pool);
     if (b == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -270,6 +273,7 @@ ngx_http_gzip_static_handler(ngx_http_request_t *r)
     b->in_file = b->file_last ? 1 : 0;
     b->last_buf = (r == r->main) ? 1 : 0;
     b->last_in_chain = 1;
+    b->sync = (b->last_buf || b->in_file) ? 0 : 1;
 
     b->file->fd = of.fd;
     b->file->name = path;

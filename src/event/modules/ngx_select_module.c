@@ -33,9 +33,9 @@ static ngx_uint_t     nevents;
 static ngx_event_t  **event_index;
 
 
-static ngx_str_t    select_name = ngx_string("select");
+static ngx_str_t           select_name = ngx_string("select");
 
-ngx_event_module_t  ngx_select_module_ctx = {
+static ngx_event_module_t  ngx_select_module_ctx = {
     &select_name,
     NULL,                                  /* create configuration */
     ngx_select_init_conf,                  /* init configuration */
@@ -143,6 +143,17 @@ ngx_select_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
         ngx_log_error(NGX_LOG_ALERT, ev->log, 0,
                       "invalid select %s event fd:%d ev:%i",
                       ev->write ? "write" : "read", c->fd, event);
+        return NGX_ERROR;
+    }
+
+    /* disable warning: the default FD_SETSIZE is 1024U in FreeBSD 5.x-10.x */
+
+    if ((event == NGX_READ_EVENT || event == NGX_WRITE_EVENT)
+        && (unsigned) c->fd >= FD_SETSIZE)
+    {
+        ngx_log_error(NGX_LOG_ERR, ev->log, 0,
+                      "maximum number of descriptors "
+                      "supported by select() is %ud", FD_SETSIZE);
         return NGX_ERROR;
     }
 
@@ -330,6 +341,7 @@ ngx_select_process_events(ngx_cycle_t *cycle, ngx_msec_t timer,
 
         if (found) {
             ev->ready = 1;
+            ev->available = -1;
 
             queue = ev->accept ? &ngx_posted_accept_events
                                : &ngx_posted_events;
@@ -409,8 +421,6 @@ ngx_select_init_conf(ngx_cycle_t *cycle, void *conf)
     if (ecf->use != ngx_select_module.ctx_index) {
         return NGX_CONF_OK;
     }
-
-    /* disable warning: the default FD_SETSIZE is 1024U in FreeBSD 5.x */
 
     if (cycle->connection_n > FD_SETSIZE) {
         ngx_log_error(NGX_LOG_EMERG, cycle->log, 0,

@@ -29,8 +29,7 @@
 #define NGX_LOG_DEBUG_EVENT       0x080
 #define NGX_LOG_DEBUG_HTTP        0x100
 #define NGX_LOG_DEBUG_MAIL        0x200
-#define NGX_LOG_DEBUG_MYSQL       0x400
-#define NGX_LOG_DEBUG_STREAM      0x800
+#define NGX_LOG_DEBUG_STREAM      0x400
 
 /*
  * do not forget to update debug_levels[] in src/core/ngx_log.c
@@ -71,6 +70,9 @@ struct ngx_log_s {
     char                *action;
 
     ngx_log_t           *next;
+
+    NGX_COMPAT_BEGIN(5)
+    NGX_COMPAT_END
 };
 
 
@@ -229,7 +231,7 @@ void ngx_cdecl ngx_log_debug_core(ngx_log_t *log, ngx_err_t err,
 
 /*********************************/
 
-ngx_log_t *ngx_log_init(u_char *prefix);
+ngx_log_t *ngx_log_init(u_char *prefix, u_char *error_log);
 void ngx_cdecl ngx_log_abort(ngx_err_t err, const char *fmt, ...);
 void ngx_cdecl ngx_log_stderr(ngx_err_t err, const char *fmt, ...);
 u_char *ngx_log_errno(u_char *buf, u_char *last, ngx_err_t err);

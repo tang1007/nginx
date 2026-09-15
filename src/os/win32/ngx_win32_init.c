@@ -25,6 +25,8 @@ ngx_os_io_t ngx_os_io = {
     ngx_wsarecv_chain,
     ngx_udp_wsarecv,
     ngx_wsasend,
+    NULL,
+    NULL,
     ngx_wsasend_chain,
     0
 };
@@ -56,15 +58,22 @@ static GUID cx_guid = WSAID_CONNECTEX;
 static GUID dx_guid = WSAID_DISCONNECTEX;
 
 
+#if (NGX_LOAD_WSAPOLL)
+ngx_wsapoll_pt             WSAPoll;
+ngx_uint_t                 ngx_have_wsapoll;
+#endif
+
+
 ngx_int_t
 ngx_os_init(ngx_log_t *log)
 {
-    DWORD        bytes;
-    SOCKET       s;
-    WSADATA      wsd;
-    ngx_err_t    err;
-    ngx_uint_t   n;
-    SYSTEM_INFO  si;
+    DWORD         bytes;
+    SOCKET        s;
+    WSADATA       wsd;
+    ngx_err_t     err;
+    ngx_time_t   *tp;
+    ngx_uint_t    n;
+    SYSTEM_INFO   si;
 
     /* get Windows version */
 
@@ -152,7 +161,7 @@ ngx_os_init(ngx_log_t *log)
     s = ngx_socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (s == (ngx_socket_t) -1) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
-                      ngx_socket_n " falied");
+                      ngx_socket_n " failed");
         return NGX_ERROR;
     }
 
@@ -220,6 +229,32 @@ ngx_os_init(ngx_log_t *log)
                       ngx_close_socket_n " failed");
     }
 
+#if (NGX_LOAD_WSAPOLL)
+    {
+    HMODULE  hmod;
+
+    hmod = GetModuleHandle("ws2_32.dll");
+    if (hmod == NULL) {
+        ngx_log_error(NGX_LOG_NOTICE, log, ngx_errno,
+                      "GetModuleHandle(\"ws2_32.dll\") failed");
+        goto nopoll;
+    }
+
+    WSAPoll = (ngx_wsapoll_pt) (void *) GetProcAddress(hmod, "WSAPoll");
+    if (WSAPoll == NULL) {
+        ngx_log_error(NGX_LOG_NOTICE, log, ngx_errno,
+                      "GetProcAddress(\"WSAPoll\") failed");
+        goto nopoll;
+    }
+
+    ngx_have_wsapoll = 1;
+
+    }
+
+nopoll:
+
+#endif
+
     if (GetEnvironmentVariable("ngx_unique", ngx_unique, NGX_INT32_LEN + 1)
         != 0)
     {
@@ -237,7 +272,8 @@ ngx_os_init(ngx_log_t *log)
         ngx_sprintf((u_char *) ngx_unique, "%P%Z", ngx_pid);
     }
 
-    srand((ngx_pid << 16) ^ (unsigned) ngx_time());
+    tp = ngx_timeofday();
+    srand((ngx_pid << 16) ^ (unsigned) tp->sec ^ tp->msec);
 
     return NGX_OK;
 }
@@ -259,7 +295,7 @@ ngx_os_status(ngx_log_t *log)
         osviex_stub = (ngx_osviex_stub_t *) &osvi.wServicePackMinor;
 
         ngx_log_error(NGX_LOG_INFO, log, 0,
-                      "OS: %ud build:%ud, \"%s\", suite:%Xd, type:%ud",
+                      "OS: %ui build:%ud, \"%s\", suite:%Xd, type:%ud",
                       ngx_win32_version, osvi.dwBuildNumber, osvi.szCSDVersion,
                       osviex_stub->wSuiteMask, osviex_stub->wProductType);
 
@@ -269,7 +305,7 @@ ngx_os_status(ngx_log_t *log)
             /* Win9x build */
 
             ngx_log_error(NGX_LOG_INFO, log, 0,
-                          "OS: %u build:%ud.%ud.%ud, \"%s\"",
+                          "OS: %ui build:%ud.%ud.%ud, \"%s\"",
                           ngx_win32_version,
                           osvi.dwBuildNumber >> 24,
                           (osvi.dwBuildNumber >> 16) & 0xff,
@@ -285,7 +321,7 @@ ngx_os_status(ngx_log_t *log)
              * and we do not support VER_PLATFORM_WIN32s at all
              */
 
-            ngx_log_error(NGX_LOG_INFO, log, 0, "OS: %ud build:%ud, \"%s\"",
+            ngx_log_error(NGX_LOG_INFO, log, 0, "OS: %ui build:%ud, \"%s\"",
                           ngx_win32_version, osvi.dwBuildNumber,
                           osvi.szCSDVersion);
         }

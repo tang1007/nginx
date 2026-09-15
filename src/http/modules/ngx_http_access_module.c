@@ -148,7 +148,7 @@ ngx_http_access_handler(ngx_http_request_t *r)
         p = sin6->sin6_addr.s6_addr;
 
         if (alcf->rules && IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
-            addr = p[12] << 24;
+            addr = (in_addr_t) p[12] << 24;
             addr += p[13] << 16;
             addr += p[14] << 8;
             addr += p[15];
@@ -309,27 +309,21 @@ ngx_http_access_rule(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_access_rule_un_t  *rule_un;
 #endif
 
+    all = 0;
     ngx_memzero(&cidr, sizeof(ngx_cidr_t));
 
     value = cf->args->elts;
 
-    all = (value[1].len == 3 && ngx_strcmp(value[1].data, "all") == 0);
-
-    if (!all) {
+    if (value[1].len == 3 && ngx_strcmp(value[1].data, "all") == 0) {
+        all = 1;
 
 #if (NGX_HAVE_UNIX_DOMAIN)
-
-        if (value[1].len == 5 && ngx_strcmp(value[1].data, "unix:") == 0) {
-            cidr.family = AF_UNIX;
-            rc = NGX_OK;
-
-        } else {
-            rc = ngx_ptocidr(&value[1], &cidr);
-        }
-
-#else
-        rc = ngx_ptocidr(&value[1], &cidr);
+    } else if (value[1].len == 5 && ngx_strcmp(value[1].data, "unix:") == 0) {
+        cidr.family = AF_UNIX;
 #endif
+
+    } else {
+        rc = ngx_ptocidr(&value[1], &cidr);
 
         if (rc == NGX_ERROR) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,

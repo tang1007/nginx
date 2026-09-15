@@ -20,12 +20,13 @@
 
 
 typedef struct {
-    ngx_flag_t       enable;
     ngx_flag_t       prefer_server_ciphers;
+    ngx_flag_t       certificate_compression;
 
     ngx_ssl_t        ssl;
 
     ngx_uint_t       starttls;
+    ngx_uint_t       listen;
     ngx_uint_t       protocols;
 
     ngx_uint_t       verify;
@@ -35,8 +36,9 @@ typedef struct {
 
     time_t           session_timeout;
 
-    ngx_str_t        certificate;
-    ngx_str_t        certificate_key;
+    ngx_array_t     *certificates;
+    ngx_array_t     *certificate_keys;
+
     ngx_str_t        dhparam;
     ngx_str_t        ecdh_curve;
     ngx_str_t        client_certificate;
@@ -46,6 +48,7 @@ typedef struct {
     ngx_str_t        ciphers;
 
     ngx_array_t     *passwords;
+    ngx_array_t     *conf_commands;
 
     ngx_shm_zone_t  *shm_zone;
 

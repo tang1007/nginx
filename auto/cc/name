@@ -25,31 +25,15 @@ fi
 
 
 if [ "$CC" = cl ]; then
-    if `$NGX_WINE $CC -v 2>&1 \
-        | grep '^Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16' \
-        >/dev/null 2>&1`; then
+    NGX_CC_NAME=msvc
+    echo " + using Microsoft Visual C++ compiler"
 
-        NGX_CC_NAME=msvc10
-        echo " + using Microsoft Visual C++ 10 compiler"
+    NGX_CC_VER=`$NGX_WINE $CC 2>&1 \
+                | grep 'C/C++.* [0-9][0-9]*\.[0-9]' 2>&1 \
+                | sed -e 's/^.* \([0-9][0-9]*\.[0-9].*\)/\1/'`
+    echo " + cl version: $NGX_CC_VER"
 
-    elif `$NGX_WINE $CC -v 2>&1 \
-        | grep '^Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 14' \
-        >/dev/null 2>&1`; then
-
-        NGX_CC_NAME=msvc8
-        echo " + using Microsoft Visual C++ 8 compiler"
-
-    elif `$NGX_WINE $CC -v 2>&1 \
-        | grep '^Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 13' \
-        >/dev/null 2>&1`; then
-
-        NGX_CC_NAME=msvc7
-        echo " + using Microsoft Visual C++ 7 compiler"
-
-    else
-        NGX_CC_NAME=msvc
-        echo " + using Microsoft Visual C++ compiler"
-    fi
+    have=NGX_COMPILER value="\"cl $NGX_CC_VER\"" . auto/define
 
 elif [ "$CC" = wcl386 ]; then
     NGX_CC_NAME=owc
@@ -63,17 +47,47 @@ elif `$CC -V 2>&1 | grep '^Intel(R) C' >/dev/null 2>&1`; then
     NGX_CC_NAME=icc
     echo " + using Intel C++ compiler"
 
+    NGX_CC_VER=`$CC -V 2>&1 \
+                | sed -n -e 's/^.* Version \([^ ]*\) *Build.*$/\1/p'`
+    echo " + icc version: $NGX_CC_VER"
+
+    have=NGX_COMPILER value="\"Intel C Compiler $NGX_CC_VER\"" . auto/define
+
 elif `$CC -v 2>&1 | grep 'gcc version' >/dev/null 2>&1`; then
     NGX_CC_NAME=gcc
     echo " + using GNU C compiler"
 
-elif `$CC -v 2>&1 | grep '\(clang\|LLVM\) version' >/dev/null 2>&1`; then
+    NGX_CC_VER=`$CC -v 2>&1 | sed -n -e 's/^gcc version \(.*\)/\1/p'`
+    echo " + gcc version: $NGX_CC_VER"
+
+    have=NGX_COMPILER value="\"gcc $NGX_CC_VER\"" . auto/define
+
+elif `$CC -v 2>&1 | grep 'clang version' >/dev/null 2>&1`; then
     NGX_CC_NAME=clang
     echo " + using Clang C compiler"
+
+    NGX_CC_VER=`$CC -v 2>&1 | sed -n -e 's/^.*clang version \(.*\)/\1/p'`
+    echo " + clang version: $NGX_CC_VER"
+
+    have=NGX_COMPILER value="\"clang $NGX_CC_VER\"" . auto/define
+
+elif `$CC -v 2>&1 | grep 'LLVM version' >/dev/null 2>&1`; then
+    NGX_CC_NAME=clang
+    echo " + using Clang C compiler"
+
+    NGX_CC_VER=`$CC -v 2>&1 | sed -n -e 's/^.*LLVM version \(.*\)/\1/p'`
+    echo " + clang version: $NGX_CC_VER"
+
+    have=NGX_COMPILER value="\"clang $NGX_CC_VER\"" . auto/define
 
 elif `$CC -V 2>&1 | grep 'Sun C' >/dev/null 2>&1`; then
     NGX_CC_NAME=sunc
     echo " + using Sun C compiler"
+
+    NGX_CC_VER=`$CC -V 2>&1 | sed -n -e 's/^.* Sun C \(.*\)/\1/p'`
+    echo " + Sun C version: $NGX_CC_VER"
+
+    have=NGX_COMPILER value="\"Sun C $NGX_CC_VER\"" . auto/define
 
 elif `$CC -V 2>&1 | grep '^Compaq C' >/dev/null 2>&1`; then
     NGX_CC_NAME=ccc

@@ -32,13 +32,14 @@ static ngx_command_t  ngx_stream_upstream_least_conn_commands[] = {
 
 
 static ngx_stream_module_t  ngx_stream_upstream_least_conn_module_ctx = {
+    NULL,                                    /* preconfiguration */
     NULL,                                    /* postconfiguration */
 
     NULL,                                    /* create main configuration */
     NULL,                                    /* init main configuration */
 
     NULL,                                    /* create server configuration */
-    NULL,                                    /* merge server configuration */
+    NULL                                     /* merge server configuration */
 };
 
 
@@ -119,6 +120,12 @@ ngx_stream_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
 
     ngx_stream_upstream_rr_peers_wlock(peers);
 
+#if (NGX_STREAM_UPSTREAM_ZONE)
+    if (peers->config && rrp->config != *peers->config) {
+        goto busy;
+    }
+#endif
+
     best = NULL;
     total = 0;
 
@@ -131,7 +138,6 @@ ngx_stream_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
          peer;
          peer = peer->next, i++)
     {
-
         n = i / (8 * sizeof(uintptr_t));
         m = (uintptr_t) 1 << i % (8 * sizeof(uintptr_t));
 
@@ -147,6 +153,10 @@ ngx_stream_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
             && peer->fails >= peer->max_fails
             && now - peer->checked <= peer->fail_timeout)
         {
+            continue;
+        }
+
+        if (peer->max_conns && peer->conns >= peer->max_conns) {
             continue;
         }
 
@@ -205,6 +215,10 @@ ngx_stream_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
                 continue;
             }
 
+            if (peer->max_conns && peer->conns >= peer->max_conns) {
+                continue;
+            }
+
             peer->current_weight += peer->effective_weight;
             total += peer->effective_weight;
 
@@ -232,6 +246,7 @@ ngx_stream_upstream_get_least_conn_peer(ngx_peer_connection_t *pc, void *data)
     best->conns++;
 
     rrp->current = best;
+    ngx_stream_upstream_rr_peer_ref(peers, best);
 
     n = p / (8 * sizeof(uintptr_t));
     m = (uintptr_t) 1 << p % (8 * sizeof(uintptr_t));
@@ -254,7 +269,7 @@ failed:
                 / (8 * sizeof(uintptr_t));
 
         for (i = 0; i < n; i++) {
-             rrp->tried[i] = 0;
+            rrp->tried[i] = 0;
         }
 
         ngx_stream_upstream_rr_peers_unlock(peers);
@@ -268,11 +283,9 @@ failed:
         ngx_stream_upstream_rr_peers_wlock(peers);
     }
 
-    /* all peers failed, mark them as live for quick recovery */
-
-    for (peer = peers->peer; peer; peer = peer->next) {
-        peer->fails = 0;
-    }
+#if (NGX_STREAM_UPSTREAM_ZONE)
+busy:
+#endif
 
     ngx_stream_upstream_rr_peers_unlock(peers);
 
@@ -297,7 +310,9 @@ ngx_stream_upstream_least_conn(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     uscf->peer.init_upstream = ngx_stream_upstream_init_least_conn;
 
     uscf->flags = NGX_STREAM_UPSTREAM_CREATE
+                  |NGX_STREAM_UPSTREAM_MODIFY
                   |NGX_STREAM_UPSTREAM_WEIGHT
+                  |NGX_STREAM_UPSTREAM_MAX_CONNS
                   |NGX_STREAM_UPSTREAM_MAX_FAILS
                   |NGX_STREAM_UPSTREAM_FAIL_TIMEOUT
                   |NGX_STREAM_UPSTREAM_DOWN

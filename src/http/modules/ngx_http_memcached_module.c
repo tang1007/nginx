@@ -61,10 +61,17 @@ static ngx_command_t  ngx_http_memcached_commands[] = {
       NULL },
 
     { ngx_string("memcached_bind"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE12,
       ngx_http_upstream_bind_set_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_memcached_loc_conf_t, upstream.local),
+      NULL },
+
+    { ngx_string("memcached_socket_keepalive"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_memcached_loc_conf_t, upstream.socket_keepalive),
       NULL },
 
     { ngx_string("memcached_connect_timeout"),
@@ -394,6 +401,7 @@ found:
             }
 
             h->hash = 1;
+            h->next = NULL;
             ngx_str_set(&h->key, "Content-Encoding");
             ngx_str_set(&h->value, "gzip");
             r->headers_out.content_encoding = h;
@@ -405,7 +413,11 @@ found:
         p = line.data + line.len;
 
         u->headers_in.content_length_n = ngx_atoof(start, p - start);
-        if (u->headers_in.content_length_n == NGX_ERROR) {
+
+        if (u->headers_in.content_length_n == NGX_ERROR
+            || u->headers_in.content_length_n
+               > NGX_MAX_OFF_T_VALUE - (off_t) NGX_HTTP_MEMCACHED_END)
+        {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "memcached sent invalid length in response \"%V\" "
                           "for key \"%V\"",
@@ -478,10 +490,11 @@ ngx_http_memcached_filter(void *data, ssize_t bytes)
 
     if (u->length == (ssize_t) ctx->rest) {
 
-        if (ngx_strncmp(b->last,
+        if (bytes > u->length
+            || ngx_strncmp(b->last,
                    ngx_http_memcached_end + NGX_HTTP_MEMCACHED_END - ctx->rest,
                    bytes)
-            != 0)
+               != 0)
         {
             ngx_log_error(NGX_LOG_ERR, ctx->request->connection->log, 0,
                           "memcached sent invalid trailer");
@@ -523,7 +536,7 @@ ngx_http_memcached_filter(void *data, ssize_t bytes)
     cl->buf->tag = u->output.tag;
 
     ngx_log_debug4(NGX_LOG_DEBUG_HTTP, ctx->request->connection->log, 0,
-                   "memcached filter bytes:%z size:%z length:%z rest:%z",
+                   "memcached filter bytes:%z size:%z length:%O rest:%z",
                    bytes, b->last - b->pos, u->length, ctx->rest);
 
     if (bytes <= (ssize_t) (u->length - NGX_HTTP_MEMCACHED_END)) {
@@ -533,7 +546,9 @@ ngx_http_memcached_filter(void *data, ssize_t bytes)
 
     last += (size_t) (u->length - NGX_HTTP_MEMCACHED_END);
 
-    if (ngx_strncmp(last, ngx_http_memcached_end, b->last - last) != 0) {
+    if (bytes > u->length
+        || ngx_strncmp(last, ngx_http_memcached_end, b->last - last) != 0)
+    {
         ngx_log_error(NGX_LOG_ERR, ctx->request->connection->log, 0,
                       "memcached sent invalid trailer");
 
@@ -592,11 +607,10 @@ ngx_http_memcached_create_loc_conf(ngx_conf_t *cf)
      *     conf->upstream.bufs.num = 0;
      *     conf->upstream.next_upstream = 0;
      *     conf->upstream.temp_path = NULL;
-     *     conf->upstream.uri = { 0, NULL };
-     *     conf->upstream.location = NULL;
      */
 
     conf->upstream.local = NGX_CONF_UNSET_PTR;
+    conf->upstream.socket_keepalive = NGX_CONF_UNSET;
     conf->upstream.next_upstream_tries = NGX_CONF_UNSET_UINT;
     conf->upstream.connect_timeout = NGX_CONF_UNSET_MSEC;
     conf->upstream.send_timeout = NGX_CONF_UNSET_MSEC;
@@ -635,6 +649,9 @@ ngx_http_memcached_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_ptr_value(conf->upstream.local,
                               prev->upstream.local, NULL);
+
+    ngx_conf_merge_value(conf->upstream.socket_keepalive,
+                              prev->upstream.socket_keepalive, 0);
 
     ngx_conf_merge_uint_value(conf->upstream.next_upstream_tries,
                               prev->upstream.next_upstream_tries, 0);
@@ -709,7 +726,7 @@ ngx_http_memcached_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     clcf->handler = ngx_http_memcached_handler;
 
-    if (clcf->name.data[clcf->name.len - 1] == '/') {
+    if (clcf->name.len && clcf->name.data[clcf->name.len - 1] == '/') {
         clcf->auto_redirect = 1;
     }
 

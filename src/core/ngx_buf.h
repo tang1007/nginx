@@ -72,10 +72,8 @@ typedef struct ngx_output_chain_ctx_s  ngx_output_chain_ctx_t;
 
 typedef ngx_int_t (*ngx_output_chain_filter_pt)(void *ctx, ngx_chain_t *in);
 
-#if (NGX_HAVE_FILE_AIO)
 typedef void (*ngx_output_chain_aio_pt)(ngx_output_chain_ctx_t *ctx,
     ngx_file_t *file);
-#endif
 
 struct ngx_output_chain_ctx_s {
     ngx_buf_t                   *buf;
@@ -85,23 +83,16 @@ struct ngx_output_chain_ctx_s {
 
     unsigned                     sendfile:1;
     unsigned                     directio:1;
-#if (NGX_HAVE_ALIGNED_DIRECTIO)
     unsigned                     unaligned:1;
-#endif
     unsigned                     need_in_memory:1;
     unsigned                     need_in_temp:1;
-#if (NGX_HAVE_FILE_AIO || NGX_THREADS)
     unsigned                     aio:1;
-#endif
 
-#if (NGX_HAVE_FILE_AIO)
+#if (NGX_HAVE_FILE_AIO || NGX_COMPAT)
     ngx_output_chain_aio_pt      aio_handler;
-#if (NGX_HAVE_AIO_SENDFILE)
-    ssize_t                    (*aio_preload)(ngx_buf_t *file);
-#endif
 #endif
 
-#if (NGX_THREADS)
+#if (NGX_THREADS || NGX_COMPAT)
     ngx_int_t                  (*thread_handler)(ngx_thread_task_t *task,
                                                  ngx_file_t *file);
     ngx_thread_task_t           *thread_task;
@@ -131,20 +122,20 @@ typedef struct {
 #define NGX_CHAIN_ERROR     (ngx_chain_t *) NGX_ERROR
 
 
-#define ngx_buf_in_memory(b)        (b->temporary || b->memory || b->mmap)
-#define ngx_buf_in_memory_only(b)   (ngx_buf_in_memory(b) && !b->in_file)
+#define ngx_buf_in_memory(b)       ((b)->temporary || (b)->memory || (b)->mmap)
+#define ngx_buf_in_memory_only(b)  (ngx_buf_in_memory(b) && !(b)->in_file)
 
 #define ngx_buf_special(b)                                                   \
-    ((b->flush || b->last_buf || b->sync)                                    \
-     && !ngx_buf_in_memory(b) && !b->in_file)
+    (((b)->flush || (b)->last_buf || (b)->sync)                              \
+     && !ngx_buf_in_memory(b) && !(b)->in_file)
 
 #define ngx_buf_sync_only(b)                                                 \
-    (b->sync                                                                 \
-     && !ngx_buf_in_memory(b) && !b->in_file && !b->flush && !b->last_buf)
+    ((b)->sync && !ngx_buf_in_memory(b)                                      \
+     && !(b)->in_file && !(b)->flush && !(b)->last_buf)
 
 #define ngx_buf_size(b)                                                      \
-    (ngx_buf_in_memory(b) ? (off_t) (b->last - b->pos):                      \
-                            (b->file_last - b->file_pos))
+    (ngx_buf_in_memory(b) ? (off_t) ((b)->last - (b)->pos):                  \
+                            ((b)->file_last - (b)->file_pos))
 
 ngx_buf_t *ngx_create_temp_buf(ngx_pool_t *pool, size_t size);
 ngx_chain_t *ngx_create_chain_of_bufs(ngx_pool_t *pool, ngx_bufs_t *bufs);
@@ -155,8 +146,8 @@ ngx_chain_t *ngx_create_chain_of_bufs(ngx_pool_t *pool, ngx_bufs_t *bufs);
 
 ngx_chain_t *ngx_alloc_chain_link(ngx_pool_t *pool);
 #define ngx_free_chain(pool, cl)                                             \
-    cl->next = pool->chain;                                                  \
-    pool->chain = cl
+    (cl)->next = (pool)->chain;                                              \
+    (pool)->chain = (cl)
 
 
 

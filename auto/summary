@@ -16,9 +16,9 @@ if [ $USE_PCRE = DISABLED ]; then
 
 else
     case $PCRE in
-        YES)   echo "  + using system PCRE library" ;;
+        YES)   echo "  + using system $PCRE_LIBRARY library" ;;
         NONE)  echo "  + PCRE library is not used" ;;
-        *)     echo "  + using PCRE library: $PCRE" ;;
+        *)     echo "  + using $PCRE_LIBRARY library: $PCRE" ;;
     esac
 fi
 
@@ -26,20 +26,6 @@ case $OPENSSL in
     YES)   echo "  + using system OpenSSL library" ;;
     NONE)  echo "  + OpenSSL library is not used" ;;
     *)     echo "  + using OpenSSL library: $OPENSSL" ;;
-esac
-
-case $MD5 in
-    YES)   echo "  + md5: using $MD5_LIB library" ;;
-    NONE)  echo "  + md5 library is not used" ;;
-    NO)    echo "  + using builtin md5 code" ;;
-    *)     echo "  + using md5 library: $MD5" ;;
-esac
-
-case $SHA1 in
-    YES)   echo "  + sha1: using $SHA1_LIB library" ;;
-    NONE)  echo "  + sha1 library is not used" ;;
-    NO)    echo "  + sha1 library is not found" ;;
-    *)     echo "  + using sha1 library: $SHA1" ;;
 esac
 
 case $ZLIB in
@@ -60,6 +46,7 @@ echo
 cat << END
   nginx path prefix: "$NGX_PREFIX"
   nginx binary file: "$NGX_SBIN_PATH"
+  nginx modules path: "$NGX_MODULES_PATH"
   nginx configuration prefix: "$NGX_CONF_PREFIX"
   nginx configuration file: "$NGX_CONF_PATH"
   nginx pid file: "$NGX_PID_PATH"

@@ -41,8 +41,8 @@ ngx_event_acceptex(ngx_event_t *rev)
         ngx_log_error(NGX_LOG_CRIT, c->log, ngx_socket_errno,
                       "setsockopt(SO_UPDATE_ACCEPT_CONTEXT) failed for %V",
                       &c->addr_text);
-    } else {
-        c->accept_context_updated = 1;
+        /* TODO: close socket */
+        return;
     }
 
     ngx_getacceptexsockaddrs(c->buffer->pos,
@@ -79,6 +79,8 @@ ngx_event_acceptex(ngx_event_t *rev)
     ngx_event_post_acceptex(ls, 1);
 
     c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
+
+    c->start_time = ngx_current_msec;
 
     ls->handler(c);
 
@@ -159,8 +161,6 @@ ngx_event_post_acceptex(ngx_listening_t *ls, ngx_uint_t n)
         c->recv_chain = ngx_recv_chain;
         c->send_chain = ngx_send_chain;
 
-        c->unexpected_eof = 1;
-
         c->listening = ls;
 
         rev = c->read;
@@ -189,7 +189,7 @@ ngx_event_post_acceptex(ngx_listening_t *ls, ngx_uint_t n)
             err = ngx_socket_errno;
             if (err != WSA_IO_PENDING) {
                 ngx_log_error(NGX_LOG_ALERT, &ls->log, err,
-                              "AcceptEx() %V falied", &ls->addr_text);
+                              "AcceptEx() %V failed", &ls->addr_text);
 
                 ngx_close_posted_connection(c);
                 return NGX_ERROR;
